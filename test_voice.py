@@ -3,7 +3,7 @@ sys.path.append('.')
 
 from src.voice.asr import transcribe_audio, record_audio
 from src.voice.tts import text_to_speech, VOICE_INFO
-from src.agents.graph import agent_graph
+from src.agents.graph import agent_graph, invoke_with_logging
 
 def test_voice_to_voice():
     """
@@ -17,22 +17,32 @@ def test_voice_to_voice():
    
     print("\nVOICE-TO-VOICE TEST")
  
+    # Initialize variables
+    audio_path = None
+    text_query = None
     
     # Step 1: Get audio input
     print("\n[1/4] AUDIO INPUT")
     choice = input("Record new audio? (y/n): ").lower()
     
     if choice == 'y':
-        duration = int(input("Recording duration in seconds (default 5): ") or "5")
-        audio_path = record_audio(duration=duration)
+        duration_input = input("Recording duration in seconds (or press Enter for manual stop): ").strip()
+        if duration_input:
+            try:
+                duration = int(duration_input)
+                audio_path = record_audio(duration=duration)
+            except ValueError:
+                print("Invalid duration, using manual stop mode")
+                audio_path = record_audio(duration=None)
+        else:
+            print("Manual stop mode: Press Enter to stop recording")
+            audio_path = record_audio(duration=None)  # Manual stop
     else:
         audio_path = input("Path to audio file (or press Enter for test): ").strip()
         if not audio_path:
             # For testing without audio file
             print("[TEST MODE] Skipping audio, using text query")
             text_query = "Find me eco-friendly puzzles under twenty dollars"
-        else:
-            text_query = None
     
     # Step 2: Transcribe
     if audio_path and text_query is None:
@@ -48,11 +58,18 @@ def test_voice_to_voice():
     print("\n[3/4] PROCESSING (LangGraph)")
     print("Running agents...")
     
-    result = agent_graph.invoke({"user_query": text_query})
+    result = invoke_with_logging(text_query)
     answer = result['final_answer']
     citations = result.get('citations', [])
     
-    print("\n Answer generated!")
+    # Show execution stats
+    logging_data = result.get('_logging', {})
+    if logging_data:
+        stats = logging_data.get('execution_stats', {})
+        print(f"\n📊 Execution: {stats.get('total_steps', 0)} steps in {stats.get('total_duration_ms', 0):.0f}ms")
+        print(f"   Log file: {logging_data.get('log_file', 'N/A')}")
+    
+    print("\n✅ Answer generated!")
     print(f"Citations: {len(citations)}")
     
     # Step 4: Convert to speech
@@ -94,7 +111,17 @@ def test_asr_only():
     
     choice = input("Record audio? (y/n): ").lower()
     if choice == 'y':
-        audio_path = record_audio(duration=5)
+        duration_choice = input("Recording duration in seconds (or press Enter for manual stop): ").strip()
+        if duration_choice:
+            try:
+                duration = int(duration_choice)
+                audio_path = record_audio(duration=duration)
+            except ValueError:
+                print("Invalid duration, using manual stop mode")
+                audio_path = record_audio(duration=None)  # Manual stop
+        else:
+            print("Manual stop mode: Press Enter to stop recording")
+            audio_path = record_audio(duration=None)  # Manual stop
     else:
         audio_path = input("Audio file path: ").strip()
     

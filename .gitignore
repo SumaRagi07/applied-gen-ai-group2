@@ -1,38 +1,68 @@
-# Environment
-.env
-venv/
-env/
-
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
+*$py.class
 *.so
-*.egg
-*.egg-info/
-dist/
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Generated files
-response.mp3
-recording.wav
-*.wav
-*.mp3
-*.m4a
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables
+.env
+.env.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Logs
+logs/
+*.log
+
+# Audio files
+*.wav
+*.mp3
+*.m4a
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
 # OS
 .DS_Store
+Thumbs.db
 
-# Jupyter
-*.ipynb_checkpoints/
+# Project specific
+user_recording.wav
+response.mp3
 
-# Large data files (keeping vectordb for LFS)
-*.csv
-*.parquet
+# Meta-files about git workflow (not needed in repo)
+SHARING_CHANGES.md
+QUICK_SHARE_GUIDE.md
+share_logging_changes.sh

@@ -22,6 +22,12 @@ class State(TypedDict):
     rag_results: Optional[List[Dict]]
     web_results: Optional[List[Dict]]
     
+    # Reconciler output
+    matched_products: Optional[List[Dict]]
+    conflicts: Optional[List[Dict]]
+    comparison_table: Optional[List[Dict]]
+    
     # Synthesizer output
     final_answer: Optional[str]
     citations: Optional[List[str]]
+    tts_summary: Optional[str]  # Concise summary for TTS (≤15 seconds)

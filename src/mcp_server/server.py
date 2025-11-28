@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import time
 import sys
 sys.path.append('.')
@@ -14,25 +15,10 @@ from src.mcp_server.tools.rag_search import get_rag_tool
 from src.mcp_server.tools.web_search import get_web_tool
 from src.mcp_server.config import config
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="MCP Server",
-    description="Model Context Protocol Server with RAG and Web Search tools",
-    version="1.0.0"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize tools on startup
-@app.on_event("startup")
-async def startup_event():
+# Lifespan event handler (replaces deprecated on_event)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
     print("Starting MCP Server...")
     print(f"Initializing tools...")
     
@@ -51,6 +37,28 @@ async def startup_event():
         print(f"✗ Failed to initialize Web tool: {e}")
     
     print(f"Server ready on http://{config.MCP_HOST}:{config.MCP_PORT}")
+    
+    yield  # App runs here
+    
+    # Shutdown (if needed)
+    print("Shutting down MCP Server...")
+
+# Initialize FastAPI app with lifespan
+app = FastAPI(
+    title="MCP Server",
+    description="Model Context Protocol Server with RAG and Web Search tools",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Health check endpoint
 @app.get("/health")

@@ -4,7 +4,9 @@ from .nodes.router import router_node
 from .nodes.safety import safety_node
 from .nodes.planner import planner_node
 from .nodes.executor import executor_node
+from .nodes.reconciler import reconciler_node
 from .nodes.synthesizer import synthesizer_node
+from .utils.logger import get_logger
 
 def create_graph():
     """Assemble the LangGraph workflow"""
@@ -17,6 +19,7 @@ def create_graph():
     workflow.add_node("safety", safety_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("executor", executor_node)
+    workflow.add_node("reconciler", reconciler_node)
     workflow.add_node("synthesizer", synthesizer_node)
     
     # Define flow
@@ -36,13 +39,39 @@ def create_graph():
     )
     
     workflow.add_edge("planner", "executor")
-    workflow.add_edge("executor", "synthesizer")
+    workflow.add_edge("executor", "reconciler")
+    workflow.add_edge("reconciler", "synthesizer")
     workflow.add_edge("synthesizer", END)
     
     # Compile
     app = workflow.compile()
     
     return app
+
+def invoke_with_logging(query: str):
+    """Invoke agent graph with logging"""
+    logger = get_logger()
+    session_id = logger.start_session(query)
+    
+    try:
+        result = agent_graph.invoke({"user_query": query})
+        
+        # End session and save log
+        log_file = logger.end_session()
+        
+        # Add logging metadata to result
+        result['_logging'] = {
+            'session_id': session_id,
+            'log_file': str(log_file),
+            'step_summary': logger.get_step_summary(),
+            'execution_stats': logger.get_execution_stats()
+        }
+        
+        return result
+    except Exception as e:
+        # Log error before ending session
+        logger.end_session()
+        raise
 
 # Create the app
 agent_graph = create_graph()

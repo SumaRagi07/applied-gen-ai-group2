@@ -14,6 +14,8 @@ from src.mcp_server.utils.rate_limiter import web_rate_limiter
 class WebSearchTool:
     def __init__(self):
         self.api_key = config.BRAVE_API_KEY
+        if not self.api_key:
+            print("⚠️ Warning: BRAVE_API_KEY not set. Web search will not work.")
         self.base_url = "https://api.search.brave.com/res/v1/web/search"
     
     def execute(self, request: WebSearchRequest) -> WebSearchResponse:
@@ -39,6 +41,15 @@ class WebSearchTool:
             )
         
         try:
+            if not self.api_key:
+                print("Web search skipped: BRAVE_API_KEY not set")
+                return WebSearchResponse(
+                    results=[],
+                    total_found=0,
+                    cached=False,
+                    query_time_ms=round((time.time() - start_time) * 1000, 2)
+                )
+            
             # Make API call
             results = self._search_brave(request.query, request.max_results)
             web_rate_limiter.record_call()
@@ -60,6 +71,14 @@ class WebSearchTool:
             
             return WebSearchResponse(**response_data)
         
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP Error in web search: {e.response.status_code} - {e.response.text}")
+            return WebSearchResponse(
+                results=[],
+                total_found=0,
+                cached=False,
+                query_time_ms=round((time.time() - start_time) * 1000, 2)
+            )
         except Exception as e:
             print(f"Error in web search: {str(e)}")
             return WebSearchResponse(

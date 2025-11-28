@@ -1,7 +1,8 @@
 import sys
 sys.path.append('.')
 
-from src.agents.graph import agent_graph
+from src.agents.graph import agent_graph, invoke_with_logging
+from src.agents.utils.logger import get_logger
 
 def test_query(query):
     """Test a single query through the agent graph"""
@@ -10,10 +11,17 @@ def test_query(query):
     print(f"QUERY: {query}")
     print("="*70)
     
-    # Run through graph
-    result = agent_graph.invoke({
-        "user_query": query
-    })
+    # Run through graph with logging
+    result = invoke_with_logging(query)
+    
+    # Show execution stats
+    logger = get_logger()
+    stats = logger.get_execution_stats()
+    print(f"\n📊 Execution Stats:")
+    print(f"   Total Steps: {stats['total_steps']}")
+    print(f"   Total Duration: {stats['total_duration_ms']:.0f} ms")
+    print(f"   Average Step Time: {stats['average_step_time_ms']:.1f} ms")
+    print(f"   Log File: {result.get('_logging', {}).get('log_file', 'N/A')}")
     
     # Print results
     print("\n" + "="*70)

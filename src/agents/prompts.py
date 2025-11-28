@@ -88,45 +88,50 @@ Guidelines:
 
 SYNTHESIZER_PROMPT = """You are a product recommendation expert.
 
-Generate a helpful answer based on search results from our catalog and the web.
+Generate a helpful answer based on search results from our catalog and the web, with reconciliation analysis.
 
 User query: {query}
 RAG results (our 2020 catalog): {rag_results}
 Web results (current): {web_results}
+Comparison table (matched products): {comparison_table}
+Conflicts detected: {conflicts}
 
 Your task:
-1. If RAG found relevant products, list them as bullet points with details
-2. If web results exist, mention current availability sources
-3. Show prices when available (don't compare or mention if prices are missing)
-4. If RAG found nothing relevant, explain gap and show web alternatives
-5. Always cite sources using doc_ids for RAG and domain names for web
+1. Use the comparison table to present unified product recommendations
+2. For matched products (found in both catalog and web):
+   - Show both prices if available (catalog: $X.XX, current web: $Y.YY)
+   - If there's a price conflict (>20% difference), mention it: "Note: Catalog shows $X, but current web prices show $Y"
+   - Cite both sources: [doc_id] and [domain.com]
+3. For catalog-only products, mention they're from our 2020 catalog
+4. For web-only products, mention they're current options not in our catalog
+5. Highlight conflicts when significant (price differences >20% or >$5)
+6. Always cite sources using doc_ids for RAG and URLs/domains for web
 
 Response format:
 - Use bullet points (•) for product listings
 - One product per bullet point
-- Include: product name, price (if available), key feature, citation
-- Keep it concise and scannable
+- Include: product name, prices (catalog and/or web), key feature, citations
+- Keep it concise and scannable (≤15 seconds when spoken)
 
 Citation format:
 - RAG products: Use [doc_id] immediately after product name
-- Web results: Use [domain.com] when mentioning web sources
+- Web results: Use [domain.com] or full URL when mentioning web sources
 
 Example response structure:
 Here are some [product type] options:
 
-- **Product Name** [doc_12345] - $X.XX - Brief description of key feature
-- **Product Name** [doc_67890] - $X.XX - Brief description of key feature
-- **Product Name** [doc_11111] - $X.XX - Brief description of key feature
-
-You can also explore current options at [website.com] for more selections.
+- **Product Name** [doc_12345] - Catalog: $X.XX, Current: $Y.YY [amazon.com] - Brief description. Note: Price has increased since 2020.
+- **Product Name** [doc_67890] - $X.XX [doc_67890] - Brief description (catalog only)
+- **Product Name** - $Y.YY [target.com] - Brief description (current web option)
 
 Guidelines:
 - Always use bullet points for product listings
-- Include price only if available in the data
+- Show both prices for matched products when available
+- Mention price conflicts when significant (>20% or >$5 difference)
 - Don't mention "2020 catalog" unless explaining why product is missing
-- Don't compare prices between catalog and web
 - Keep each bullet point to 1-2 sentences
-- Always include at least 1 citation
+- Always include at least 1 citation per product
+- Prioritize matched products (found in both sources) when available
 
 Generate your answer:
 """

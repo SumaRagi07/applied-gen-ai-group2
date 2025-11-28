@@ -1,5 +1,5 @@
 import chromadb
-import openai
+from openai import OpenAI
 import time
 from typing import List, Dict, Any, Optional
 import sys
@@ -13,9 +13,16 @@ class RagSearchTool:
         print(f"Initializing RAG Search Tool...")
         print(f"ChromaDB path: {config.CHROMA_PATH}")
         
+        # Validate API key
+        if not config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY not set in .env file")
+        
+        # Initialize OpenAI client (new API)
+        self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+        
+        # Initialize ChromaDB
         self.client = chromadb.PersistentClient(path=config.CHROMA_PATH)
         self.collection = self.client.get_collection(name="products")
-        openai.api_key = config.OPENAI_API_KEY
         
         print(f"Collection loaded: {self.collection.count()} products")
     
@@ -52,7 +59,8 @@ class RagSearchTool:
             raise
     
     def _generate_embedding(self, text: str) -> List[float]:
-        response = openai.embeddings.create(
+        # Use new OpenAI client API
+        response = self.openai_client.embeddings.create(
             model=config.EMBEDDING_MODEL,
             input=text
         )

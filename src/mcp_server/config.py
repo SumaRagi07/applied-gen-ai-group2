@@ -2,7 +2,10 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from project root (go up from src/mcp_server/ to project root)
+project_root = Path(__file__).parent.parent.parent
+env_path = project_root / ".env"
+load_dotenv(dotenv_path=env_path, override=True)
 
 class Config:
     # API Keys
@@ -10,7 +13,9 @@ class Config:
     BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
     
     # Paths
-    CHROMA_PATH = os.getenv("CHROMA_PATH", "/Users/sumasreeragi/Desktop/UChicago/Quarter 4/Gen AI/Final Project/vectordb/chroma")
+    # Default to relative path, or use absolute path from env
+    default_chroma_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vectordb", "chroma")
+    CHROMA_PATH = os.getenv("CHROMA_PATH", default_chroma_path)
     LOG_DIR = Path("logs")
     
     # Server settings
