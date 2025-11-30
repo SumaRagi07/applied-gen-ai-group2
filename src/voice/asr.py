@@ -44,7 +44,7 @@ def transcribe_audio(audio_file_path: str) -> str:
         return ""
 
 
-def record_audio(duration: int = 5, sample_rate: int = 16000, output_path: str = "recording.wav") -> str:
+def record_audio(duration: int = 30, sample_rate: int = 16000, output_path: str = "recording.wav") -> str:
     """
     Record audio from microphone (optional helper function)
     
@@ -57,7 +57,7 @@ def record_audio(duration: int = 5, sample_rate: int = 16000, output_path: str =
         str: Path to saved audio file
         
     Example:
-        >>> audio_path = record_audio(duration=5)
+        >>> audio_path = record_audio(duration=30)
         >>> text = transcribe_audio(audio_path)
     """
     
