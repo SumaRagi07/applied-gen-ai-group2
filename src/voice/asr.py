@@ -1,6 +1,8 @@
 import os
 import numpy as np
 from dotenv import load_dotenv
+import threading
+import time
 
 load_dotenv()
 
@@ -11,6 +13,7 @@ try:
 except ImportError:
     OPENAI_NEW_API = False
     import openai as openai_old
+
 
 def transcribe_audio(audio_file_path: str) -> str:
     """
@@ -61,9 +64,94 @@ def transcribe_audio(audio_file_path: str) -> str:
         return ""
 
 
+class BackgroundRecorder:
+    """Records audio in background using sounddevice"""
+    
+    def __init__(self, sample_rate=16000):
+        self.sample_rate = sample_rate
+        self.recording = []
+        self.is_recording = False
+        self.stream = None
+        self.thread = None
+        
+    def start_recording(self):
+        """Start recording in background thread"""
+        try:
+            import sounddevice as sd
+            
+            self.recording = []
+            self.is_recording = True
+            
+            print("[ASR] Starting background recording...")
+            
+            # Define callback to collect audio
+            def audio_callback(indata, frames, time_info, status):
+                if status:
+                    print(f"[ASR] Status: {status}")
+                if self.is_recording:
+                    self.recording.append(indata.copy())
+            
+            # Start audio stream
+            self.stream = sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                dtype='int16',
+                callback=audio_callback,
+                blocksize=int(self.sample_rate * 0.1)  # 100ms blocks
+            )
+            
+            self.stream.start()
+            print("[ASR] ✓ Recording started")
+            
+        except ImportError:
+            print("[ASR] Error: sounddevice not installed. Install with: pip install sounddevice")
+            return False
+        except Exception as e:
+            print(f"[ASR] Error starting recording: {e}")
+            return False
+        
+        return True
+    
+    def stop_recording(self, output_path="recording.wav"):
+        """Stop recording and save to file"""
+        try:
+            import sounddevice as sd
+            import scipy.io.wavfile as wav
+            
+            print("[ASR] Stopping recording...")
+            self.is_recording = False
+            
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+                self.stream = None
+            
+            if not self.recording:
+                print("[ASR] No audio recorded")
+                return ""
+            
+            # Concatenate all recorded chunks
+            audio_data = np.concatenate(self.recording, axis=0)
+            
+            # Save to WAV file
+            wav.write(output_path, self.sample_rate, audio_data)
+            
+            duration = len(audio_data) / self.sample_rate
+            print(f"[ASR] ✓ Saved {duration:.1f}s recording to {output_path}")
+            
+            return output_path
+            
+        except ImportError:
+            print("[ASR] Error: scipy not installed. Install with: pip install scipy")
+            return ""
+        except Exception as e:
+            print(f"[ASR] Error saving recording: {e}")
+            return ""
+
+
 def record_audio(duration: int = None, sample_rate: int = 16000, output_path: str = "recording.wav", stop_event=None) -> str:
     """
-    Record audio from microphone (optional helper function)
+    Record audio from microphone (legacy fixed-duration function)
     
     Args:
         duration: Recording duration in seconds (None = record until stopped manually)
@@ -76,7 +164,6 @@ def record_audio(duration: int = None, sample_rate: int = 16000, output_path: st
         
     Example:
         >>> audio_path = record_audio(duration=5)  # Fixed duration
-        >>> audio_path = record_audio()  # Manual stop (press Enter)
         >>> text = transcribe_audio(audio_path)
     """
     
@@ -84,7 +171,6 @@ def record_audio(duration: int = None, sample_rate: int = 16000, output_path: st
         import sounddevice as sd
         import scipy.io.wavfile as wav
         import queue
-        import threading
         
         if duration is None:
             print("[ASR] Recording... (Press Enter to stop)")
@@ -95,7 +181,7 @@ def record_audio(duration: int = None, sample_rate: int = 16000, output_path: st
         q = queue.Queue()
         recording_frames = []
         
-        def audio_callback(indata, frames, time, status):
+        def audio_callback(indata, frames, time_info, status):
             """Callback function to collect audio data"""
             if status:
                 print(f"[ASR] Status: {status}")
@@ -125,7 +211,6 @@ def record_audio(duration: int = None, sample_rate: int = 16000, output_path: st
                 stop_event.wait()
         else:
             # Fixed duration mode
-            import time
             time.sleep(duration)
         
         # Stop recording
@@ -152,6 +237,7 @@ def record_audio(duration: int = None, sample_rate: int = 16000, output_path: st
         
     except ImportError:
         print("[ASR] Error: sounddevice or scipy not installed")
+        print("[ASR] Install with: pip install sounddevice scipy")
         return ""
     except Exception as e:
         print(f"[ASR] Recording error: {str(e)}")

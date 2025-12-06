@@ -61,6 +61,7 @@ def test_voice_to_voice():
     result = invoke_with_logging(text_query)
     answer = result['final_answer']
     citations = result.get('citations', [])
+    tts_summary = result.get('tts_summary', answer)  # ✅ GET TTS SUMMARY
     
     # Show execution stats
     logging_data = result.get('_logging', {})
@@ -82,8 +83,9 @@ def test_voice_to_voice():
     
     voice_choice = input("\nChoose voice (default: alloy): ").strip() or "alloy"
     
+    # ✅ USE TTS SUMMARY (NOT FULL ANSWER)
     audio_output = text_to_speech(
-        text=answer,
+        text=tts_summary,  # ✅ CHANGED: Use tts_summary instead of answer
         output_path="response.mp3",
         voice=voice_choice
     )
@@ -100,9 +102,9 @@ def test_voice_to_voice():
         for citation in citations:
             print(f"  - {citation}")
         
-        print("\n Test complete! Play 'response.mp3' to hear the answer.")
+        print("\n✅ Test complete! Play 'response.mp3' to hear the answer.")
     else:
-        print("\n TTS failed")
+        print("\n❌ TTS failed")
 
 
 def test_asr_only():
@@ -127,7 +129,7 @@ def test_asr_only():
     
     if audio_path:
         text = transcribe_audio(audio_path)
-        print(f"\n Transcription: {text}")
+        print(f"\n✅ Transcription: {text}")
 
 
 def test_tts_only():
@@ -141,7 +143,7 @@ def test_tts_only():
     voice = input("Voice (alloy/echo/fable/onyx/nova/shimmer, default: alloy): ").strip() or "alloy"
     
     audio_path = text_to_speech(text, voice=voice)
-    print(f"\n Audio saved: {audio_path}")
+    print(f"\n✅ Audio saved: {audio_path}")
 
 
 if __name__ == "__main__":

@@ -1,8 +1,13 @@
+"""
+Web search tool using Google Shopping API (via SerpAPI)
+Replaces Brave Search for product price lookups
+"""
+
 import requests
 import time
-import re
+import os
 from typing import List
-from urllib.parse import urlparse
+from dotenv import load_dotenv
 import sys
 sys.path.append('.')
 
@@ -11,28 +16,33 @@ from src.mcp_server.schemas import WebSearchRequest, WebSearchResponse, WebResul
 from src.mcp_server.utils.cache import web_cache
 from src.mcp_server.utils.rate_limiter import web_rate_limiter
 
+load_dotenv()
+
 class WebSearchTool:
     def __init__(self):
-        self.api_key = config.BRAVE_API_KEY
+        self.api_key = os.getenv("SERPAPI_KEY")
         if not self.api_key:
-            print("⚠️ Warning: BRAVE_API_KEY not set. Web search will not work.")
-        self.base_url = "https://api.search.brave.com/res/v1/web/search"
+            print("⚠️ Warning: SERPAPI_KEY not set. Web search will not work.")
+        self.base_url = "https://serpapi.com/search"
     
     def execute(self, request: WebSearchRequest) -> WebSearchResponse:
         start_time = time.time()
         
-        # Check cache first
-        cache_key = f"web_search:{request.query}"
+        # Create CONSISTENT cache key (normalize query)
+        cache_key = f"web_search:{request.query.lower().strip()}"
         cached_result = web_cache.get(cache_key)
         
         if cached_result:
+            print(f"✅ [CACHE HIT] {request.query}")
             cached_result['cached'] = True
             cached_result['query_time_ms'] = round((time.time() - start_time) * 1000, 2)
             return WebSearchResponse(**cached_result)
         
+        print(f"❌ [CACHE MISS] {request.query}")
+        
         # Check rate limit
         if not web_rate_limiter.is_allowed():
-            print("Rate limit exceeded for web search")
+            print("⚠️ Rate limit exceeded for web search")
             return WebSearchResponse(
                 results=[],
                 total_found=0,
@@ -42,7 +52,7 @@ class WebSearchTool:
         
         try:
             if not self.api_key:
-                print("Web search skipped: BRAVE_API_KEY not set")
+                print("⚠️ Web search skipped: SERPAPI_KEY not set")
                 return WebSearchResponse(
                     results=[],
                     total_found=0,
@@ -50,8 +60,8 @@ class WebSearchTool:
                     query_time_ms=round((time.time() - start_time) * 1000, 2)
                 )
             
-            # Make API call
-            results = self._search_brave(request.query, request.max_results)
+            # Make API call to Google Shopping
+            results = self._search_google_shopping(request.query, request.max_results)
             web_rate_limiter.record_call()
             
             # Format results
@@ -68,11 +78,12 @@ class WebSearchTool:
             
             # Cache the result
             web_cache.set(cache_key, response_data)
+            print(f"💾 [CACHE SET] {request.query}")
             
             return WebSearchResponse(**response_data)
         
         except requests.exceptions.HTTPError as e:
-            print(f"HTTP Error in web search: {e.response.status_code} - {e.response.text}")
+            print(f"❌ HTTP Error in web search: {e.response.status_code}")
             return WebSearchResponse(
                 results=[],
                 total_found=0,
@@ -80,7 +91,7 @@ class WebSearchTool:
                 query_time_ms=round((time.time() - start_time) * 1000, 2)
             )
         except Exception as e:
-            print(f"Error in web search: {str(e)}")
+            print(f"❌ Error in web search: {str(e)}")
             return WebSearchResponse(
                 results=[],
                 total_found=0,
@@ -88,59 +99,74 @@ class WebSearchTool:
                 query_time_ms=round((time.time() - start_time) * 1000, 2)
             )
     
-    def _search_brave(self, query: str, max_results: int) -> dict:
-        headers = {
-            "Accept": "application/json",
-            "X-Subscription-Token": self.api_key
-        }
-        
+    def _search_google_shopping(self, query: str, max_results: int) -> dict:
+        """Search Google Shopping via SerpAPI"""
         params = {
+            "engine": "google_shopping",
             "q": query,
-            "count": max_results
+            "api_key": self.api_key,
+            "num": max_results,
+            "hl": "en",
+            "gl": "us"
         }
         
         response = requests.get(
             self.base_url,
-            headers=headers,
             params=params,
-            timeout=10
+            timeout=30
         )
         
         response.raise_for_status()
         return response.json()
     
     def _format_results(self, api_response: dict) -> List[WebResult]:
+        """Format Google Shopping results"""
         results = []
         
-        web_results = api_response.get('web', {}).get('results', [])
+        shopping_results = api_response.get('shopping_results', [])
         
-        for item in web_results:
+        for item in shopping_results:
             title = item.get('title', '')
-            url = item.get('url', '')
-            description = item.get('description', '')
+            url = item.get('product_link', '')
             
-            # Extract price from description if present
-            price = self._extract_price(description)
+            # Build snippet from available info
+            snippet_parts = []
+            if item.get('source'):
+                snippet_parts.append(f"Available from {item['source']}")
+            if item.get('delivery'):
+                snippet_parts.append(item['delivery'])
+            if item.get('rating') and item.get('reviews'):
+                snippet_parts.append(f"Rated {item['rating']}/5 ({item['reviews']} reviews)")
             
-            # Extract domain as source
-            source = urlparse(url).netloc.replace('www.', '')
+            snippet = ' · '.join(snippet_parts) if snippet_parts else ''
+            
+            # Get price (already formatted as "$19.99")
+            price = item.get('price')
+            
+            # Get source/store name
+            source = item.get('source', 'Unknown')
+            
+            # Get rating and reviews
+            rating = item.get('rating')
+            reviews = item.get('reviews')
+            
+            # ✅ GET THUMBNAIL IMAGE
+            thumbnail = item.get('thumbnail')
             
             result = WebResult(
                 title=title,
                 url=url,
-                snippet=description,
+                snippet=snippet,
                 price=price,
-                source=source
+                source=source,
+                rating=rating,
+                reviews=reviews,
+                thumbnail=thumbnail  # ✅ ADD THIS
             )
             results.append(result)
         
         return results
-    
-    def _extract_price(self, text: str) -> str:
-        # Try to find price patterns like $19.99, $1,299.00
-        price_pattern = r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?'
-        match = re.search(price_pattern, text)
-        return match.group(0) if match else None
+
 
 # Global instance
 web_tool = None

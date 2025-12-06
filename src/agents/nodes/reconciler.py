@@ -7,6 +7,7 @@ Reconciliation node: Matches and compares RAG (catalog) vs Web results
 
 import re
 import time
+import concurrent.futures  
 from typing import List, Dict, Any, Optional
 from difflib import SequenceMatcher
 from ..utils.logger import get_logger
@@ -52,63 +53,85 @@ def _normalize_title(title: str) -> str:
     words = [w for w in words if w not in stopwords]
     return ' '.join(words)
 
+import concurrent.futures
+
+def _find_best_match_for_product(rag_product: Dict, web_results: List[Dict], used_indices: set) -> Optional[Dict]:
+    """Find best web match for a single RAG product (parallelizable)"""
+    best_match = None
+    best_score = 0.0
+    best_web_idx = None
+    
+    rag_brand = _normalize_brand(rag_product.get('brand', ''))
+    rag_title = _normalize_title(rag_product.get('title', ''))
+    
+    for web_idx, web_product in enumerate(web_results):
+        if web_idx in used_indices:
+            continue
+        
+        # Extract brand from web title/snippet (simple heuristic)
+        web_title = _normalize_title(web_product.get('title', ''))
+        web_snippet = web_product.get('snippet', '').lower()
+        
+        # Try to extract brand from web result
+        web_title_words = web_title.split()[:3]
+        web_brand_candidates = ' '.join(web_title_words)
+        
+        # Calculate brand similarity
+        brand_sim = _similarity(rag_brand, web_brand_candidates) if rag_brand else 0.0
+        
+        # Calculate title similarity
+        title_sim = _similarity(rag_title, web_title)
+        
+        # Combined score (weighted: brand 40%, title 60%)
+        combined_score = (brand_sim * 0.4) + (title_sim * 0.6)
+        
+        # Also check if brand appears in snippet
+        if rag_brand and rag_brand in web_snippet:
+            combined_score += 0.2
+            combined_score = min(combined_score, 1.0)
+        
+        if combined_score > best_score and combined_score > 0.5:
+            best_score = combined_score
+            best_match = web_product
+            best_web_idx = web_idx
+    
+    if best_match:
+        return {
+            'rag_product': rag_product,
+            'web_product': best_match,
+            'web_idx': best_web_idx,
+            'similarity_score': round(best_score, 3),
+            'match_type': 'brand_title' if best_score > 0.7 else 'partial'
+        }
+    return None
+
+
 def _match_products(rag_results: List[Dict], web_results: List[Dict]) -> List[Dict]:
     """
-    Match RAG products with Web products based on brand and title similarity
+    Match RAG products with Web products USING PARALLELIZATION
     
     Returns list of matched pairs with similarity scores
     """
     matched_pairs = []
     used_web_indices = set()
     
-    for rag_idx, rag_product in enumerate(rag_results):
-        best_match = None
-        best_score = 0.0
-        best_web_idx = None
+    # ✅ PARALLEL MATCHING - Process all RAG products simultaneously
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        # Submit all matching tasks
+        futures = {
+            executor.submit(_find_best_match_for_product, rag_product, web_results, used_web_indices): rag_product
+            for rag_product in rag_results
+        }
         
-        rag_brand = _normalize_brand(rag_product.get('brand', ''))
-        rag_title = _normalize_title(rag_product.get('title', ''))
-        
-        for web_idx, web_product in enumerate(web_results):
-            if web_idx in used_web_indices:
-                continue
-            
-            # Extract brand from web title/snippet (simple heuristic)
-            web_title = _normalize_title(web_product.get('title', ''))
-            web_snippet = web_product.get('snippet', '').lower()
-            
-            # Try to extract brand from web result
-            # Look for brand in title (first few words often contain brand)
-            web_title_words = web_title.split()[:3]  # First 3 words often have brand
-            web_brand_candidates = ' '.join(web_title_words)
-            
-            # Calculate brand similarity
-            brand_sim = _similarity(rag_brand, web_brand_candidates) if rag_brand else 0.0
-            
-            # Calculate title similarity
-            title_sim = _similarity(rag_title, web_title)
-            
-            # Combined score (weighted: brand 40%, title 60%)
-            combined_score = (brand_sim * 0.4) + (title_sim * 0.6)
-            
-            # Also check if brand appears in snippet
-            if rag_brand and rag_brand in web_snippet:
-                combined_score += 0.2
-                combined_score = min(combined_score, 1.0)  # Cap at 1.0
-            
-            if combined_score > best_score and combined_score > 0.5:  # Threshold: 50% similarity
-                best_score = combined_score
-                best_match = web_product
-                best_web_idx = web_idx
-        
-        if best_match:
-            matched_pairs.append({
-                'rag_product': rag_product,
-                'web_product': best_match,
-                'similarity_score': round(best_score, 3),
-                'match_type': 'brand_title' if best_score > 0.7 else 'partial'
-            })
-            used_web_indices.add(best_web_idx)
+        # Collect results as they complete
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                # Mark web index as used
+                used_web_indices.add(result['web_idx'])
+                # Remove the web_idx from result before appending
+                web_idx = result.pop('web_idx')
+                matched_pairs.append(result)
     
     return matched_pairs
 
@@ -150,9 +173,6 @@ def _detect_conflicts(matched_pairs: List[Dict]) -> List[Dict]:
                     'message': f"Catalog shows ${rag_price:.2f}, web shows ${web_price:.2f} ({price_diff_pct:.1f}% difference)"
                 })
         
-        # Availability conflict (web might show out of stock, catalog doesn't)
-        # This is harder to detect without structured data, but we can note it
-        
         if conflict['conflicts']:
             conflicts.append(conflict)
     
@@ -180,9 +200,15 @@ def _create_comparison_table(rag_results: List[Dict], web_results: List[Dict], m
             'catalog_id': rag.get('doc_id'),
             'web_url': web.get('url'),
             'web_source': web.get('source'),
+            'image_url': rag.get('image_url'),  # Use catalog image
+            'product_url': rag.get('product_url'),
+            'eco_friendly': rag.get('eco_friendly'),
+            'rating': web.get('rating'),  # ✅ Add web rating
+            'reviews': web.get('reviews'),  # ✅ Add web reviews
             'match_confidence': pair['similarity_score'],
             'has_conflict': len([c for c in _detect_conflicts([pair]) if c['conflicts']]) > 0,
-            'sources': ['catalog', 'web']
+            'sources': ['catalog', 'web'],
+            'type': 'matched'
         })
     
     # Add unmatched RAG products (catalog only)
@@ -197,27 +223,39 @@ def _create_comparison_table(rag_results: List[Dict], web_results: List[Dict], m
                 'catalog_id': rag_product.get('doc_id'),
                 'web_url': None,
                 'web_source': None,
+                'image_url': rag_product.get('image_url'),
+                'product_url': rag_product.get('product_url'),
+                'eco_friendly': rag_product.get('eco_friendly'),
+                'rating': None,
+                'reviews': None,
                 'match_confidence': None,
                 'has_conflict': False,
-                'sources': ['catalog']
+                'sources': ['catalog'],
+                'type': 'catalog_only'
             })
     
-    # Add unmatched web products (web only)
+    # Add unmatched web products (web only) - ✅ USE WEB THUMBNAIL
     matched_web_urls = {pair['web_product'].get('url') for pair in matched_pairs}
     for web_product in web_results:
         if web_product.get('url') not in matched_web_urls:
             web_price = _extract_price(web_product.get('price'))
             comparison.append({
                 'title': web_product.get('title'),
-                'brand': None,  # Extract if possible
+                'brand': None,
                 'catalog_price': None,
                 'web_price': web_price,
                 'catalog_id': None,
                 'web_url': web_product.get('url'),
                 'web_source': web_product.get('source'),
+                'image_url': web_product.get('thumbnail'),  # ✅ USE WEB THUMBNAIL
+                'product_url': web_product.get('url'),
+                'eco_friendly': None,
+                'rating': web_product.get('rating'),  # ✅ Add web rating
+                'reviews': web_product.get('reviews'),  # ✅ Add web reviews
                 'match_confidence': None,
                 'has_conflict': False,
-                'sources': ['web']
+                'sources': ['web'],
+                'type': 'web_only'
             })
     
     return comparison
@@ -258,9 +296,15 @@ def reconciler_node(state):
                     'catalog_id': r.get('doc_id'),
                     'web_url': None,
                     'web_source': None,
+                    'image_url': r.get('image_url'),
+                    'product_url': r.get('product_url'),
+                    'eco_friendly': r.get('eco_friendly'),
+                    'rating': None,
+                    'reviews': None,
                     'match_confidence': None,
                     'has_conflict': False,
-                    'sources': ['catalog']
+                    'sources': ['catalog'],
+                    'type': 'catalog_only'
                 }
                 for r in rag_results
             ]
@@ -290,9 +334,15 @@ def reconciler_node(state):
                     'catalog_id': None,
                     'web_url': w.get('url'),
                     'web_source': w.get('source'),
+                    'image_url': w.get('thumbnail'),  # ✅ USE WEB THUMBNAIL
+                    'product_url': w.get('url'),
+                    'eco_friendly': None,
+                    'rating': w.get('rating'),
+                    'reviews': w.get('reviews'),
                     'match_confidence': None,
                     'has_conflict': False,
-                    'sources': ['web']
+                    'sources': ['web'],
+                    'type': 'web_only'
                 }
                 for w in web_results
             ]
@@ -355,4 +405,3 @@ def reconciler_node(state):
     )
     
     return output_data
-

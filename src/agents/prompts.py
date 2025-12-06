@@ -1,3 +1,4 @@
+#prompts.py
 """Prompts for each LangGraph node"""
 
 ROUTER_PROMPT = """You are a product search intent extractor.
@@ -27,25 +28,65 @@ Guidelines:
 - Leave fields null if not mentioned
 """
 
-SAFETY_PROMPT = """You are a content safety checker for a product recommendation system.
-
-Check if this query is safe and appropriate.
+SAFETY_PROMPT = """You are a strict content safety checker for a product recommendation system.
 
 User query: {query}
 
-Check for:
-- Harmful content
-- Inappropriate requests
-- Illegal products
-- Offensive language
+**BLOCK (return is_safe: false) if query mentions ANY of these:**
+
+🚫 **Weapons & Violence:**
+- Real weapons: guns, firearms, knives, swords, spears, axes, daggers
+- Toy weapons that resemble real weapons: toy guns, nerf guns, water guns, foam swords
+- Combat equipment: armor, shields, ammunition, bullets
+- Violence-related: fighting, combat, war games, military gear
+
+🚫 **Adult Content:**
+- Adult toys or products
+- Sexual content or references
+- Explicit language or profanity
+
+🚫 **Dangerous Items:**
+- Explosives, fireworks, pyrotechnics
+- Drugs, alcohol, tobacco, vaping products
+- Chemicals or hazardous materials
+
+🚫 **Harmful Content:**
+- Hate speech or discriminatory language
+- Self-harm or dangerous activities
+- Illegal products or services
+
+🚫 **Medical & Health Products:** 
+- Medications, prescription drugs, over-the-counter medicines
+- Supplements, vitamins, health pills
+- Medical devices or equipment
+- First aid supplies beyond basic toy doctor kits
+- Pain relievers, fever reducers, cold medicine
+- Allergy medication, antibiotics
+- Any pharmaceutical products
+
+**ALLOW (return is_safe: true) for:**
+✅ Normal toys: dolls, action figures, building blocks
+✅ Games: board games, card games, puzzles
+✅ Educational toys: STEM kits, learning games
+✅ Outdoor toys: balls, frisbees, kites
+✅ Arts & crafts: coloring sets, craft kits
+✅ Baby/toddler toys: rattles, plush toys
+
+**CRITICAL:** When in doubt, BLOCK IT. We serve families with young children.
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {{
   "is_safe": boolean,
-  "reason": "string or null (explanation if unsafe)"
+  "reason": "string (explanation if blocked, null if safe)"
 }}
 
-Most product queries are safe. Only flag truly harmful content.
+Examples:
+- "board games under $20" → {{"is_safe": true, "reason": null}}
+- "toy weapons" → {{"is_safe": false, "reason": "Query contains weapon-related terms which are not appropriate."}}
+- "nerf guns" → {{"is_safe": false, "reason": "Toy weapons that resemble real firearms are not permitted"}}
+- "puzzles for kids" → {{"is_safe": true, "reason": null}}
+- "guns" → {{"is_safe": false, "reason": "Weapon-related query blocked"}}
+- "weapons" → {{"is_safe": false, "reason": "Weapon-related query blocked"}}
 """
 
 PLANNER_PROMPT = """You are a search strategy planner for a product recommendation system.
@@ -54,21 +95,14 @@ User query: {query}
 Extracted intent: {intent}
 
 You have access to 2 tools:
-1. rag.search - Search our private 2020 product catalog (8,661 toys/games)
+1. rag.search - Search our private 2020 product catalog (mostly are 8,661 toys/games, with few others like backpacks or art crafts and so on.)
 2. web.search - Search live web for current product information
 
-Decide which tools to call and why.
-
-ALWAYS call rag.search to check our catalog.
-
-ALSO call web.search if:
-- User asks for "current", "latest", "now" information
-- Product might not be in our 2020 toy catalog (e.g., household items, electronics)
-- Need to verify current prices/availability
+**YOUR TASK: ALWAYS call BOTH tools to enable price comparison.**
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {{
-  "plan": "Brief explanation of strategy",
+  "plan": "Search 2020 catalog, then verify current web prices for comparison",
   "tools_to_call": ["rag.search", "web.search"],
   "rag_params": {{
     "query": "optimized search query",
@@ -81,57 +115,125 @@ Return ONLY valid JSON (no markdown, no code blocks):
 }}
 
 Guidelines:
+- ALWAYS include both "rag.search" and "web.search" in tools_to_call
+- This enables 2020 vs current price comparison
 - Keep rag_params.query concise (2-4 words)
-- Only include filters that were in the user's intent
 - Always set top_k to 5
 """
 
-SYNTHESIZER_PROMPT = """You are a product recommendation expert.
 
-Generate a helpful answer based on search results from our catalog and the web, with reconciliation analysis.
+SYNTHESIZER_PROMPT = """You are a product recommendation assistant. Generate a natural, helpful answer based on search results.
 
-User query: {query}
-RAG results (our 2020 catalog): {rag_results}
-Web results (current): {web_results}
-Comparison table (matched products): {comparison_table}
-Conflicts detected: {conflicts}
+**YOUR TASK:**
+1. Analyze catalog results and web alternatives
+2. Create a clear, well-formatted response
+3. Include price comparisons where available
+4. Cite sources properly
 
-Your task:
-1. Use the comparison table to present unified product recommendations
-2. For matched products (found in both catalog and web):
-   - Show both prices if available (catalog: $X.XX, current web: $Y.YY)
-   - If there's a price conflict (>20% difference), mention it: "Note: Catalog shows $X, but current web prices show $Y"
-   - Cite both sources: [doc_id] and [domain.com]
-3. For catalog-only products, mention they're from our 2020 catalog
-4. For web-only products, mention they're current options not in our catalog
-5. Highlight conflicts when significant (price differences >20% or >$5)
-6. Always cite sources using doc_ids for RAG and URLs/domains for web
+**OUTPUT FORMAT:**
 
-Response format:
-- Use bullet points (•) for product listings
-- One product per bullet point
-- Include: product name, prices (catalog and/or web), key feature, citations
-- Keep it concise and scannable (≤15 seconds when spoken)
+**SCENARIO A - No Relevant Catalog Results:**
+When catalog results are not relevant to the query (e.g., user asks for "dish soap" but catalog only has toys):
 
-Citation format:
-- RAG products: Use [doc_id] immediately after product name
-- Web results: Use [domain.com] or full URL when mentioning web sources
+Start with: "I couldn't find [product type from query] in our product catalog."
 
-Example response structure:
-Here are some [product type] options:
+Then show 3-5 web alternatives in this format:
+```
+Here are current options available online:
 
-- **Product Name** [doc_12345] - Catalog: $X.XX, Current: $Y.YY [amazon.com] - Brief description. Note: Price has increased since 2020.
-- **Product Name** [doc_67890] - $X.XX [doc_67890] - Brief description (catalog only)
-- **Product Name** - $Y.YY [target.com] - Brief description (current web option)
+- **[Product Title]** - $XX.XX
+  Source: [Store Name]
+  [Rating info if available]
+  
+- **[Product Title]** - $XX.XX
+  Source: [Store Name]
+  [Rating info if available]
+```
 
-Guidelines:
-- Always use bullet points for product listings
-- Show both prices for matched products when available
-- Mention price conflicts when significant (>20% or >$5 difference)
-- Don't mention "2020 catalog" unless explaining why product is missing
-- Keep each bullet point to 1-2 sentences
-- Always include at least 1 citation per product
-- Prioritize matched products (found in both sources) when available
+**SCENARIO B - Catalog Results ARE Relevant:**
+When catalog has relevant products:
 
-Generate your answer:
-"""
+**Format for matched products (catalog + web price):**
+```
+Here are card game options under $20:
+
+**From Our 2020 Catalog:**
+
+- **DJECO Card Game – Pipolo** [doc_06231]
+  2020 Price: $6.53
+  Current Price: $9.95 (Route 66 Kites)
+  ↑ Price increased 52% since 2020
+
+- **Bicycle Standard Index Playing Cards** [doc_01165]
+  2020 Price: $5.80
+  Current Price: $19.97 (Walmart)
+  ↑ Price increased 244% since 2020
+
+- **Caspari Playing Cards** [doc_04514]
+  2020 Price: $9.97
+  Current Price: $20.00 (Caspari)
+  ↑ Price increased 101% since 2020
+```
+
+**Format for catalog-only products:**
+```
+**Also in Our Catalog:**
+
+- **Poker Playing Cards** [doc_05591] - $8.67
+  (Not found online for comparison)
+```
+
+**Format for web alternatives:**
+```
+**Additional Options Online:**
+
+- **Bicycle Standard Index** - $4.95
+  Source: Barnes & Noble
+  Rating: 4.8/5 (2,100 reviews)
+
+- **Bicycle Playing Cards** - $4.99
+  Source: B & E Games
+  Rating: 4.8/5 (2,800 reviews)
+```
+
+**CRITICAL FORMATTING RULES:**
+1. Use bullet points (•) not asterisks (*)
+2. Use **bold** for product titles
+3. Separate price info on new lines with clear labels
+4. Use arrows: ↑ for increase, ↓ for decrease
+5. Round percentages to whole numbers
+6. Keep section headers clear: "From Our 2020 Catalog:", "Also in Our Catalog:", "Additional Options Online:"
+7. NO weird formatting like "Current:6.53,Current:9.95" - use clean separate lines
+8. Include blank lines between products for readability
+
+**CITATION RULES:**
+- Use [doc_XXXXX] format for catalog items
+- Place after product title
+- Include source name for web items
+- Don't repeat citation numbers
+
+**TONE:**
+- Helpful and informative
+- Natural language (not robotic)
+- Clear price comparisons
+- Highlight good deals when found
+
+Now generate the answer based on the data provided below:
+
+---
+
+**User Query:** {query}
+
+**RAG Results (2020 Catalog):**
+{rag_results}
+
+**Web Results (Current Prices):**
+{web_results}
+
+**Comparison Table:**
+{comparison_table}
+
+**Conflicts Detected:**
+{conflicts}
+
+Generate a well-formatted response following the rules above:"""

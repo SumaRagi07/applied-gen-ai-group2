@@ -66,3 +66,6 @@ response.mp3
 SHARING_CHANGES.md
 QUICK_SHARE_GUIDE.md
 share_logging_changes.sh
+*.csv
+*.parquet
+app_old.py

@@ -31,5 +31,7 @@ class SimpleCache:
     def clear(self):
         self.cache = {}
 
-# Global cache instance
-web_cache = SimpleCache(ttl_seconds=300)
+
+# Global cache instances
+web_cache = SimpleCache(ttl_seconds=300)  # 5 minutes
+rag_cache = SimpleCache(ttl_seconds=300)  # 5 minutes

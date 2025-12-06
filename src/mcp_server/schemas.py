@@ -38,6 +38,9 @@ class WebResult(BaseModel):
     snippet: str
     price: Optional[str] = None
     source: str
+    rating: Optional[float] = None      # ← NEW: Product rating
+    reviews: Optional[int] = None       # ← NEW: Number of reviews
+    thumbnail: Optional[str] = None
 
 class WebSearchResponse(BaseModel):
     results: List[WebResult]

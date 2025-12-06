@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from utils.cache import rag_cache, web_cache  # ✅ Add this import at top
 import time
 import sys
 sys.path.append('.')
@@ -60,6 +61,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/clear_cache")
+async def clear_cache_endpoint():
+    """Clear all caches"""
+    # Import at the top of server.py if not already there
+    from utils.cache import rag_cache, web_cache
+    
+    rag_cache.clear()
+    web_cache.clear()
+    
+    print("[CACHE] All caches cleared via API!")
+    
+    return {
+        "success": True,
+        "message": "All caches cleared"
+    }
 # Health check endpoint
 @app.get("/health")
 async def health_check():

@@ -1,3 +1,4 @@
+#synthesizer.py
 import json
 import os
 import re
@@ -26,12 +27,25 @@ def synthesizer_node(state):
         "comparison_table_count": len(state.get('comparison_table', []))
     }
     
-    # If query was unsafe, return error message
+    # ✅ UPDATED: If query was unsafe, return error message WITH TTS
     if not state.get('is_safe', True):
+        safety_reason = state.get('safety_reason', 'Content policy violation.')
+        
+        # Create user-friendly message
+        error_message = (
+            f"I'm sorry, but I can't help with that request. {safety_reason}"
+        )
+        
+        # ✅ CREATE TTS SUMMARY for unsafe query
+        tts_message = (
+            "I'm sorry, I can't help with that request. "
+            "This query violates our content safety policies."
+        )
+        
         output_data = {
-            "final_answer": f"I cannot process this request. {state.get('safety_reason', 'Content policy violation.')}",
+            "final_answer": error_message,
             "citations": [],
-            "tts_summary": None
+            "tts_summary": tts_message  # ✅ Changed from None
         }
         duration_ms = (time.time() - start_time) * 1000
         logger.log_step(
@@ -64,10 +78,52 @@ def synthesizer_node(state):
     tts_web_results = web_results
     tts_comparison_table = comparison_table
     
-    # Limit to top 3 for context size
-    rag_summary = json.dumps(rag_results[:3], indent=2) if rag_results else "No results"
-    web_summary = json.dumps(web_results[:3], indent=2) if web_results else "No results"
-    comparison_summary = json.dumps(comparison_table[:5], indent=2) if comparison_table else "No matches"
+    # ✅ Helper function to format comparison table cleanly
+    def format_comparison_table(table):
+        """Format comparison table as clean readable text to prevent formatting issues"""
+        if not table:
+            return "No matches"
+        
+        formatted = []
+        for i, item in enumerate(table[:20], 1):
+            lines = [f"\n=== Product {i} ==="]
+            lines.append(f"Title: {item.get('title', 'Unknown')}")
+            
+            doc_id = item.get('catalog_id')
+            if doc_id:
+                lines.append(f"Citation: [doc_{doc_id}]")
+            
+            catalog_price = item.get('catalog_price')
+            web_price = item.get('web_price')
+            
+            if catalog_price:
+                lines.append(f"2020 Catalog Price: ${catalog_price:.2f}")
+            
+            if web_price:
+                source = item.get('web_source', 'Unknown')
+                lines.append(f"Current Web Price: ${web_price:.2f}")
+                lines.append(f"Source: {source}")
+            
+            if catalog_price and web_price:
+                diff_pct = ((web_price - catalog_price) / catalog_price) * 100
+                direction = "increased" if diff_pct > 0 else "decreased"
+                lines.append(f"Price Change: {direction} {abs(diff_pct):.0f}% since 2020")
+            
+            # Add type info
+            item_type = item.get('type', 'matched')
+            if item_type == 'catalog_only':
+                lines.append("Status: Catalog only (not found online)")
+            elif item_type == 'web_only':
+                lines.append("Status: Web alternative (not in catalog)")
+            
+            formatted.append("\n".join(lines))
+        
+        return "\n".join(formatted)
+    
+    # ✅ SEND PRE-FORMATTED DATA (prevents LLM from mangling the format)
+    rag_summary = json.dumps(rag_results, indent=2) if rag_results else "No results"
+    web_summary = json.dumps(web_results[:10], indent=2) if web_results else "No results"
+    comparison_summary = format_comparison_table(comparison_table)
     conflicts_summary = json.dumps(conflicts, indent=2) if conflicts else "No conflicts detected"
     
     prompt = SYNTHESIZER_PROMPT.format(
@@ -79,60 +135,72 @@ def synthesizer_node(state):
     )
     
     response = llm.invoke([
-        SystemMessage(content="You are a helpful product recommendation assistant."),
+        SystemMessage(content="You are a helpful product recommendation assistant. Follow the formatting instructions in the prompt exactly as specified."),
         HumanMessage(content=prompt)
     ])
-    
+   
     answer = response.content
     
-    # Extract citations from answer
+    # ✅ EXTRACT ALL CITATIONS - including store names without dots
     citations = []
-    seen_domains = set()
-    
-    # Extract doc_ids (format: [doc_00123])
+    seen_citations = set()
+
+    # 1. Extract doc_ids (format: [doc_00123])
     doc_ids = re.findall(r'\[doc_\d+\]', answer)
-    citations.extend(doc_ids)
-    
-    # Extract full URLs in markdown format (format: [text](url))
+    for doc_id in doc_ids:
+        if doc_id not in seen_citations:
+            citations.append(doc_id)
+            seen_citations.add(doc_id)
+
+    # 2. Extract full URLs in markdown format
     urls_markdown = re.findall(r'\]\((https?://[^\)]+)\)', answer)
     for url in urls_markdown:
-        # Extract domain from full URL
-        domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
-        if domain_match:
-            domain = domain_match.group(1)
-            if domain not in seen_domains:
-                citations.append(url)
-                seen_domains.add(domain)
-    
-    # Extract URLs in square brackets (format: [https://...])
+        if url not in seen_citations:
+            citations.append(url)
+            seen_citations.add(url)
+
+    # 3. Extract URLs in square brackets
     urls_brackets = re.findall(r'\[(https?://[^\]]+)\]', answer)
     for url in urls_brackets:
-        domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
-        if domain_match:
-            domain = domain_match.group(1)
-            if domain not in seen_domains:
-                citations.append(url)
-                seen_domains.add(domain)
-    
-    # Extract domain names in brackets (format: [domain.com])
-    domains = re.findall(r'\[([a-zA-Z0-9\-]+\.[a-zA-Z0-9\-\.]+)\]', answer)
-    for domain in domains:
-        # Skip if it's a doc_id or already seen
-        if not domain.startswith('doc_') and domain not in seen_domains:
-            # Check if we already have a full URL for this domain
-            if not any(domain in str(c) for c in citations):
-                citations.append(f"[{domain}]")
-                seen_domains.add(domain)
-    
+        if url not in seen_citations:
+            citations.append(url)
+            seen_citations.add(url)
+
+    # 4. Extract ANY text in brackets (store names, domains, etc.)
+    all_brackets = re.findall(r'\[([^\]]+)\]', answer)
+    for item in all_brackets:
+        # Skip doc_ids and URLs (already captured)
+        if not item.startswith('doc_') and not item.startswith('http'):
+            if item not in seen_citations:
+                citations.append(f"[{item}]")
+                seen_citations.add(item)
+
     print(f"\n[SYNTHESIZER] Generated answer with {len(citations)} unique citations")
+    
+    # ✅ ADD: Extract web sources from comparison table (DEDUPLICATED)
+    web_sources_set = set()
+    for item in comparison_table[:20]:
+        web_source = item.get('web_source')
+        if web_source:
+            # Clean up source (remove extra info after dash)
+            clean_source = web_source.split(' -')[0].strip()
+            web_sources_set.add(clean_source)
+
+    # Add unique web sources to citations
+    for source in sorted(web_sources_set):
+        if source not in seen_citations:
+            citations.append(source)
+            seen_citations.add(source)
+
+    print(f"[SYNTHESIZER] Total citations (with {len(web_sources_set)} unique web sources): {len(citations)}")
     
     # Generate TTS summary (≤15 seconds) with structured product data
     tts_summary = _create_tts_summary_with_data(
         answer, 
         citations, 
-        tts_rag_results[:3] if tts_rag_results else [],  # Top 3 products with prices
-        tts_web_results[:3] if tts_web_results else [],   # Top 3 web results with prices
-        tts_comparison_table[:3] if tts_comparison_table else [],  # Top 3 from comparison
+        tts_rag_results[:3] if tts_rag_results else [],
+        tts_web_results[:3] if tts_web_results else [],
+        tts_comparison_table[:3] if tts_comparison_table else [],
         max_words=40
     )
     
@@ -161,7 +229,6 @@ def synthesizer_node(state):
     )
     
     return output_data
-
 
 def _create_tts_summary_with_data(
     full_answer: str, 
