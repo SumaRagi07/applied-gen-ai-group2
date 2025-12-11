@@ -142,6 +142,22 @@ User Query
   Results
 ```
 
+## Evaluation Results
+
+We evaluated the system across text generation, retrieval accuracy, and performance metrics using 3 representative test queries:
+
+| Metric | Score | Description |
+|--------|-------|-------------|
+| **Semantic Similarity** | 0.748 | Meaning-based response quality |
+| **Precision@5** | 0.867 | Top-5 retrieval accuracy |
+| **ROUGE-1** | 0.324 | Text overlap with references |
+| **Latency** | 15s (9s cached) | Average response time |
+| **Cost** | $0.022 | API cost per query |
+
+**Key Findings**: High semantic similarity (0.748) and precision@5 (0.867) demonstrate effective retrieval with natural, conversational responses. The system achieves strong performance at low cost ($0.022/query) with acceptable latency for a complex multi-agent workflow.
+
+See `Evaluation_Notebook.ipynb` for detailed analysis and visualizations.
+
 ## Quick Start
 
 ### Prerequisites
