@@ -44,6 +44,36 @@ This project implements an intelligent product search assistant that:
 - **Real-time Progress**: Live UI updates during processing
 - **Agent Execution Logs**: Detailed step-by-step breakdown
 
+
+## Models Used
+
+### Large Language Models (OpenAI)
+- **GPT-4o** - Multi-agent orchestration
+  - Intent extraction (Router)
+  - Content safety checking (Safety)
+  - Search planning (Planner)
+  - Response generation (Synthesizer)
+
+### Speech Models (OpenAI)
+- **Whisper** - Speech-to-text transcription (ASR)
+  - Supports WAV, MP3, M4A formats
+  - Background recording with live audio capture
+  
+- **TTS-1** - Text-to-speech generation
+  - Multiple voice options: alloy, echo, fable, onyx, nova, shimmer
+  - 15-second product summary generation
+
+### Embedding Models (OpenAI)
+- **text-embedding-3-small** - Vector embeddings for semantic search
+  - Product catalog vectorization
+  - RAG search over 8,661 products in ChromaDB
+
+### External APIs
+- **SerpAPI (Google Shopping)** - Real-time product price lookups
+  - Current market prices
+  - Product images and ratings
+  - Multi-source price comparison
+
 ## Architecture
 
 ### System Components
