@@ -1,380 +1,371 @@
 # Agentic Voice-to-Voice AI Assistant for Product Discovery
 
-An Agentic AI system that enables voice-to-voice product discovery with real-time price comparison, powered by LangGraph, OpenAI, and ChromaDB.
+An intelligent product search assistant that combines voice interaction, semantic search, and real-time price comparison using LangGraph, OpenAI, and ChromaDB.
+
+## Table of Contents
+- [Overview](#overview)
+- [Dataset & Preprocessing](#dataset--preprocessing)
+- [System Architecture](#system-architecture)
+- [Models & Technology Stack](#models--technology-stack)
+- [Evaluation Results](#evaluation-results)
+- [Installation & Setup](#installation--setup)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [Contributors](#contributors)
+
+---
 
 ## Overview
 
-This project implements an intelligent product search assistant that:
-- **Accepts voice or text queries** for product searches
-- **Searches a product catalog** (Amazon Product Dataset 2020) using RAG
-- **Fetches current prices** from the web using SerpAPI
-- **Reconciles and compares** historical v.s. current prices
-- **Generates voice responses** with product recommendations
-- **Provides a Streamlit UI** with real-time progress tracking
+This system enables natural voice-based product discovery with historical price comparison:
 
-## Key Features
+**What it does:**
+- Accepts voice or text queries for product searches
+- Searches a 2020 Amazon product catalog using semantic search (RAG)
+- Fetches current prices from the web via Google Shopping
+- Compares historical vs. current prices and detects conflicts
+- Generates voice responses with product recommendations
+- Provides an interactive Streamlit UI with real-time updates
 
-### Voice Interface
-- **Speech-to-Text (ASR)**: Record audio or upload files for transcription
-- **Text-to-Speech (TTS)**: Natural voice responses with multiple voice options
-- **Background Recording**: Continuous audio recording with live timer
+**Example query:**
+"Find board games under $20" → System returns catalog products from 2020, fetches current prices, compares them, and generates a voice summary.
 
-### Multi-Agent Architecture
-- **Router**: Extracts intent and query type from user input
-- **Safety**: Content moderation to filter inappropriate queries
-- **Planner**: Strategically plans search operations
-- **Executor**: Executes RAG and web searches
-- **Reconciler**: Matches products and detects price conflicts
-- **Synthesizer**: Generates comprehensive answers with citations
+---
 
-### Product Intelligence
-- **Price Comparison**: Historical (2020) vs. current prices
-- **Conflict Detection**: Flags significant price discrepancies
-- **Product Matching**: Fuzzy matching between catalog and web results
-- **Rich Product Cards**: Images, ratings, reviews, and direct purchase links
+## Dataset & Preprocessing
 
-### Search Capabilities
-- **RAG Search**: Semantic search over products with filters
-- **Web Search**: Real-time product information via SerpAPI (Google Shopping)
-- **Caching**: Intelligent caching for faster repeated queries
+### Source Data
+- **Dataset:** Amazon Product Data 2020 (Hugging Face: `calmgoose/amazon-product-data-2020`)
+- **Size:** 10,002 products → 8,661 products after cleaning (86.6% retention)
+- **Categories:** 22 main categories dominated by Toys & Games (73%)
 
-### Monitoring & Logging
-- **Comprehensive Logging**: JSON logs for all agent steps
-- **Execution Statistics**: Duration tracking, tool call metrics
-- **Real-time Progress**: Live UI updates during processing
-- **Agent Execution Logs**: Detailed step-by-step breakdown
+### Key Statistics
+- **Price Range:** $0.50 - $5,332.00 (Median: $16.99, Mean: $40.31)
+- **Distribution:** 69% under $25, making it ideal for budget-conscious queries
+- **Text Coverage:** 98% have descriptions, 100% have images
+- **Brands:** 2,406 unique brands identified
 
+### Preprocessing Pipeline
 
-## Models Used
+**1. Data Cleaning**
+- Removed 6 sparse columns (UPC: 99.7% missing, Dimensions: 95% missing)
+- Dropped 992 products missing price, category, or all text fields
+- Normalized prices and removed invalid entries
 
-### Large Language Models (OpenAI)
-- **GPT-4o** - Multi-agent orchestration
-  - Intent extraction (Router)
-  - Content safety checking (Safety)
-  - Search planning (Planner)
-  - Response generation (Synthesizer)
+**2. Text Processing**
+- Removed boilerplate phrases and special characters
+- Combined title, description, specifications, and details into unified text
+- Average text length: 1,304 characters per product
 
-### Speech Models (OpenAI)
-- **Whisper** - Speech-to-text transcription (ASR)
-  - Supports WAV, MP3, M4A formats
-  - Background recording with live audio capture
-  
-- **TTS-1** - Text-to-speech generation
-  - Multiple voice options: alloy, echo, fable, onyx, nova, shimmer
-  - 15-second product summary generation
+**3. Feature Engineering**
+- Parsed category hierarchy (3 levels: main → sub → leaf)
+- Extracted brands from product titles
+- Detected materials and eco-friendly keywords
+- Created price buckets (budget, mid, premium)
+- Generated citation IDs (doc_00000 to doc_08660)
 
-### Embedding Models (OpenAI)
-- **text-embedding-3-small** - Vector embeddings for semantic search
-  - Product catalog vectorization
-  - RAG search over 8,661 products in ChromaDB
+**4. Vector Database**
+- Generated 1536-dimensional embeddings using OpenAI text-embedding-3-small
+- Indexed 8,661 products in ChromaDB with metadata (price, category, brand, materials)
+- Search performance: 10-50ms average query time
+- One-time embedding cost: $0.22
 
-### External APIs
-- **SerpAPI (Google Shopping)** - Real-time product price lookups
-  - Current market prices
-  - Product images and ratings
-  - Multi-source price comparison
+---
 
-## Architecture
+## System Architecture
 
-### System Components
+![System Architecture](images/Architecture_Diagram.jpeg)
 
-```
-┌─────────────────┐
-│  Streamlit UI   │
-│   (app.py)      │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  LangGraph      │
-│  Multi-Agent    │
-│  Workflow       │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌────────┐ ┌──────────┐
-│  MCP   │ │  Voice   │
-│ Server │ │  Module  │
-└───┬────┘ └──────────┘
-    │
-    ├──► RAG Search (ChromaDB)
-    └──► Web Search (SerpAPI)
-```
+### Components
 
-### Agent Workflow
+**Streamlit UI**
+- Voice recording interface with live audio capture
+- Product cards with images, prices, and ratings
+- Real-time agent execution logs
 
-```
-User Query
-    │
-    ▼
-┌─────────┐
-│ Router  │ ──► Extract intent & query type
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│ Safety  │ ──► Content moderation
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│ Planner │ ──► Plan search strategy
-└────┬────┘
-     │
-     ▼
-┌─────────┐
-│Executor │ ──► Execute RAG + Web searches
-└────┬────┘
-     │
-     ▼
-┌────────────┐
-│ Reconciler │ ──► Match products & detect conflicts
-└────┬───────┘
-     │
-     ▼
-┌────────────┐
-│Synthesizer │ ──► Generate answer + TTS summary
-└────┬───────┘
-     │
-     ▼
-  Results
-```
+**LangGraph Workflow (6 Nodes)**
+- Orchestrates multi-step workflow with state management
+- Coordinates LLM agents and processing nodes
+
+**MCP Server (FastAPI)**
+- Provides two tools: rag.search and web.search
+- Handles caching and rate limiting
+
+**Voice Module**
+- ASR: OpenAI Whisper for speech-to-text
+- TTS: OpenAI TTS-1 for text-to-speech
+
+**Data Layer**
+- ChromaDB: Vector database for semantic search
+- SerpAPI: Real-time web search via Google Shopping
+
+### Workflow Nodes
+
+The system uses 6 nodes in a sequential workflow:
+
+**1. Router (LLM Agent)**
+- Extracts intent from user query using GPT-4o
+- Parses product type, budget, price range, category, and filters
+- Example: "board games under $20" → {product_type: "game", price_max: 20.0}
+
+**2. Safety (LLM Agent)**
+- Content moderation using GPT-4o
+- Blocks queries for weapons, medications, adult content
+- Returns safe/unsafe flag with reason
+
+**3. Planner (LLM Agent)**
+- Plans search strategy using GPT-4o
+- Decides which tools to call (rag.search, web.search)
+- Sets parameters (query terms, filters, result count)
+
+**4. Executor (Processing Node)**
+- Calls MCP tools in parallel
+- Executes 5 RAG searches (catalog products)
+- Executes 6 web searches (current prices for each product + alternatives)
+- Implements caching for repeated queries
+
+**5. Reconciler (Processing Node)**
+- Fuzzy matching algorithm (not LLM-based)
+- Matches catalog products to web results using brand (40%) and title (60%) similarity
+- Detects price conflicts (>20% or >$5 difference)
+- Uses ThreadPoolExecutor for parallel matching (3-5x speedup)
+
+**6. Synthesizer (LLM Agent)**
+- Generates final answer using GPT-4o
+- Creates comparison table with matched products and price changes
+- Produces 15-second TTS summary with top 3 products
+- Includes citations from catalog (doc IDs) and web sources
+
+**Prompt Engineering:**
+All LLM prompts are centralized in `src/agents/prompts.py` for easy modification and version control.
+
+---
+
+## Models & Technology Stack
+
+### Large Language Model
+**GPT-4o (OpenAI)**
+- Used in 4 nodes: Router, Safety, Planner, Synthesizer
+- Handles intent extraction, content moderation, planning, and generation
+- Cost: ~$0.015 per query (6 total calls)
+
+### Embedding Model
+**text-embedding-3-small (OpenAI)**
+- 1536-dimensional vectors for semantic search
+- Chosen over open-source alternatives for production-grade quality
+- One-time indexing cost: $0.22 for 8,661 products
+
+### Speech Models
+**Whisper (OpenAI)** - Speech-to-text
+- Supports WAV, MP3, M4A formats
+- Cost: ~$0.0003 per query
+
+**TTS-1 (OpenAI)** - Text-to-speech
+- 6 voice options (alloy, echo, fable, onyx, nova, shimmer)
+- Cost: ~$0.0075 per query
+
+### Vector Database
+**ChromaDB**
+- Chosen over FAISS for built-in metadata filtering
+- Supports price, category, and boolean filters natively
+- Persistent storage with automatic save
+
+### External API
+**SerpAPI (Google Shopping)**
+- Real-time product price lookups
+
+**Total cost per query: ~$0.022**
+
+---
 
 ## Evaluation Results
 
-We evaluated the system across text generation, retrieval accuracy, and performance metrics using 3 representative test queries:
+Evaluated on 3 representative queries (products in catalog, price changes, web-only):
 
 | Metric | Score | Description |
 |--------|-------|-------------|
-| **Semantic Similarity** | 0.748 | Meaning-based response quality |
-| **Precision@5** | 0.867 | Top-5 retrieval accuracy |
-| **ROUGE-1** | 0.324 | Text overlap with references |
-| **Latency** | 15s (9s cached) | Average response time |
-| **Cost** | $0.022 | API cost per query |
+| Semantic Similarity | 0.748 | Meaning-based response quality |
+| Precision@5 | 0.867 | Top-5 retrieval accuracy |
+| ROUGE-1 | 0.324 | Text overlap with references |
+| Latency (no cache) | 15.19s | Average response time |
+| Latency (cached) | 9.08s | Response time with cache |
+| Cost | $0.022 | API cost per query |
 
-**Key Findings**: High semantic similarity (0.748) and precision@5 (0.867) demonstrate effective retrieval with natural, conversational responses. The system achieves strong performance at low cost ($0.022/query) with acceptable latency for a complex multi-agent workflow.
+**Key Findings:**
+- High semantic similarity (0.748) shows strong natural language understanding
+- Excellent precision@5 (0.867) means 87% of top recommendations are relevant
+- Low cost ($0.022/query) enables scalability
+- Caching provides 40% latency reduction
 
-See `Evaluation_Notebook.ipynb` for detailed analysis and visualizations.
+See `Evaluation_Notebook.ipynb` for detailed analysis and methodology.
 
-## Quick Start
+---
+
+## Installation & Setup
 
 ### Prerequisites
-
-- Python 3.9+ (3.10+ recommended)
-- Git
+- Python 3.9 or higher
+- Git with Git LFS installed
 - OpenAI API key
-- SerpAPI key (for Google Shopping search)
+- SerpAPI key
 
-### Installation
+### Step 1: Clone Repository
+```bash
+git clone https://github.com/SumaRagi07/applied-gen-ai-group2
+cd applied-gen-ai-group2
+git lfs pull
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/SumaRagi07/applied-gen-ai-group2
-   cd applied-gen-ai-group2
-   ```
+### Step 2: Create Environment File
+Create a `.env` file in the project root:
+```
+OPENAI_API_KEY=sk-your-key-here
+SERPAPI_KEY=your-serpapi-key-here
+CHROMA_PATH=./vectordb/chroma
+```
 
-2. **Set up environment variables**
-   
-   Create a `.env` file in the project root:
-   ```bash
-   OPENAI_API_KEY=sk-proj-your-actual-key-here
-   SERPAPI_KEY=your-serpapi-key-here
-   CHROMA_PATH=./vectordb/chroma
-   ```
+**Getting API Keys:**
+- OpenAI: https://platform.openai.com/api-keys
+- SerpAPI: https://serpapi.com/ (250 free searches/month)
 
-3. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+### Step 3: Set Up Python Environment
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
-4. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Step 4: Start the System
 
-5. **Test the setup**
-   
-   **Terminal 1** - Start MCP Server:
-   ```bash
-   python src/mcp_server/server.py
-   ```
-   
-   You should see:
-   ```
-   Starting MCP Server...
-   ✓ RAG Search tool initialized
-   ✓ Web Search tool initialized
-   Server ready on http://0.0.0.0:8000
-   ```
+**Terminal 1 - MCP Server:**
+```bash
+python src/mcp_server/server.py
+```
+Wait for: "Server ready on http://0.0.0.0:8000"
 
-6. **Run the Streamlit app**
-   ```bash
-   streamlit run app.py
-   ```
+**Terminal 2 - Streamlit UI:**
+```bash
+streamlit run app.py
+```
+
+---
 
 ## Usage
 
-### Web Interface
+### Interface Options
 
-1. **Start the MCP server** (Terminal 1):
-   ```bash
-   python src/mcp_server/server.py
-   ```
+**Voice Input:**
+- Click "Start Recording" and speak your query
+- System uses Whisper for transcription
 
-2. **Launch Streamlit UI** (Terminal 2):
-   ```bash
-   streamlit run app.py
-   ```
+**Text Input:**
+- Type directly in the text field
+- Useful for testing without audio
 
-3. **Use the interface**:
-   - **Record**: Click "Start Recording" and speak your query
-   - **Upload**: Upload an audio file (WAV, MP3, M4A)
-   - **Type**: Enter your query directly in the text field
+**Audio Upload:**
+- Upload WAV, MP3, or M4A files
+- Alternative to live recording
 
-4. **View results**:
-   - Audio summary (15-second voice response)
-   - Product cards with images and prices
-   - Price comparison tables
-   - Full detailed answer
-   - Agent execution logs
-   - Citations and sources
+### Example Queries
+- "board games under $20"
+- "puzzles for kids under $15"
+- "eco-friendly toys under $25"
+- "backpacks under $20"
+- "wooden toys for babies"
+
+### Viewing Results
+
+The UI displays:
+- Audio summary (15-second voice response)
+- Product cards with images, prices, and ratings
+- Price comparison table (2020 vs. current)
+- Full text answer with citations
+- Agent execution logs (expandable in sidebar)
+- Direct purchase links
+
+---
 
 ## Project Structure
-
 ```
 applied-gen-ai-group2/
-├── app.py                          # Streamlit UI application
-├── requirements.txt                # Python dependencies
-├── .env.example                    # Environment variables (change to .env after putting the key and path)
+├── app.py                          # Streamlit UI
+├── requirements.txt                # Dependencies
+├── .env                            # API keys (create this)
+├── Evaluation_Notebook.ipynb      # Evaluation metrics
 │
 ├── src/
-│   ├── agents/                     # Multi-agent system
-│   │   ├── graph.py                # LangGraph workflow definition
+│   ├── agents/                     # LangGraph workflow
+│   │   ├── graph.py                # Workflow definition
 │   │   ├── state.py                # State schema
-│   │   ├── prompts.py               # LLM prompts for each node
-│   │   ├── nodes/                   # Agent nodes
-│   │   │   ├── router.py            # Intent extraction
-│   │   │   ├── safety.py            # Content moderation
-│   │   │   ├── planner.py           # Search planning
-│   │   │   ├── executor.py          # Tool execution
-│   │   │   ├── reconciler.py        # Product reconciliation
-│   │   │   └── synthesizer.py       # Answer generation
+│   │   ├── prompts.py              # LLM prompts (Router, Safety, Planner, Synthesizer)
+│   │   ├── nodes/                  # Workflow nodes
+│   │   │   ├── router.py           # Intent extraction
+│   │   │   ├── safety.py           # Content moderation
+│   │   │   ├── planner.py          # Search planning
+│   │   │   ├── executor.py         # Tool execution
+│   │   │   ├── reconciler.py       # Product matching
+│   │   │   └── synthesizer.py      # Answer generation
 │   │   └── utils/
-│   │       └── logger.py            # Logging system
+│   │       └── logger.py           # Execution logging
 │   │
-│   ├── mcp_server/                 # Model Context Protocol server
-│   │   ├── server.py                # FastAPI server
-│   │   ├── config.py                # Configuration
-│   │   ├── schemas.py               # Request/response schemas
+│   ├── mcp_server/                 # MCP server
+│   │   ├── server.py               # FastAPI server
+│   │   ├── config.py               # Configuration
+│   │   ├── schemas.py              # Data schemas
 │   │   ├── tools/
-│   │   │   ├── rag_search.py        # RAG search tool
-│   │   │   └── web_search.py        # Web search tool
+│   │   │   ├── rag_search.py       # Catalog search
+│   │   │   └── web_search.py       # Web search
 │   │   └── utils/
-│   │       ├── cache.py             # Caching utilities
-│   │       └── rate_limiter.py      # Rate limiting
+│   │       ├── cache.py            # Caching
+│   │       └── rate_limiter.py     # Rate limiting
 │   │
-│   └── voice/                       # Voice processing
-│       ├── asr.py                   # Speech-to-text
-│       └── tts.py                   # Text-to-speech
+│   └── voice/                      # Voice processing
+│       ├── asr.py                  # Speech-to-text
+│       └── tts.py                  # Text-to-speech
 │
-├── vectordb/                        # Vector database
-│   └── chroma/                      # ChromaDB instance
+├── vectordb/                       # Vector database (Git LFS)
+│   └── chroma/
+│       ├── chroma.sqlite3          # ChromaDB database
+│       └── embeddings_openai.npy   # Embeddings (1536-dim)
 │
-├── logs/                            # Agent execution logs
-│
-├── *.ipynb                          # Data processing notebooks
-│
-└── test_*.py                        # Test scripts
+├── logs/                           # Execution logs
+└── images/                         # Screenshots
 ```
 
-## API Keys
+**Note:** All LLM prompts are in `src/agents/prompts.py` - this is a key requirement for the project as it centralizes prompt engineering and makes the system maintainable.
 
-### OpenAI API Key
-1. Visit https://platform.openai.com/api-keys
-2. Sign in or create an account
-3. Click "Create new secret key"
-4. Copy the key (starts with `sk-`)
+---
 
-### SerpAPI Key
-1. Visit https://serpapi.com/
-2. Sign up for free account (100 searches/month)
-3. Get your API key from dashboard
-4. Copy the key
+## Demo Screenshots
 
-## Configuration
+![Streamlit Interface - Main View](images/UI_Page1.png)
+*Main interface showing voice recording, text input, and product results*
 
-### Environment Variables
+![Streamlit Interface - Results](images/UI_Page2.png)
+*Detailed results with price comparison and agent logs*
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `OPENAI_API_KEY` | OpenAI API key for LLM and embeddings | Yes |
-| `SERPAPI_KEY` | SerpAPI key for Google Shopping search | Yes |
-| `CHROMA_PATH` | Path to ChromaDB directory | Yes |
+---
 
-### MCP Server Configuration
+## Contributors
 
-Edit `src/mcp_server/config.py` to change:
-- Server host (default: `0.0.0.0`)
-- Server port (default: `8000`)
-- Cache settings
-- Rate limiting
+- Deepali Dagar
+- Lynn Jin
+- Monica Ko
+- Sumasree Ragi
+- Chenxi Liu
 
-## Key Features Explained
-
-### Product Reconciliation
-
-The reconciler node matches products between the catalog (2020) and current web results:
-- **Fuzzy Matching**: Uses brand names (40%) and titles (60%) with similarity scoring
-- **Conflict Detection**: Flags price discrepancies >20% or >$5
-- **Unified Table**: Creates comparison table with matched, catalog-only, and web-only products
-
-### Logging System
-
-Comprehensive logging tracks:
-- **Step Execution**: Each agent node with timestamps
-- **Tool Calls**: RAG and web search requests/responses
-- **Execution Statistics**: Total duration, average time per step
-- **JSON Logs**: Saved to `logs/` directory for analysis
-
-### TTS Summary Generation
-
-The synthesizer creates concise 15-second voice summaries:
-- Uses actual product prices
-- Natural citation formatting for speech
-- Conversational format
-
-## Troubleshooting
-
-### Common Issues
-
-**"OPENAI_API_KEY environment variable not set"**
-- Ensure `.env` file exists (not `.env.example`)
-- Check that `OPENAI_API_KEY=sk-...` is set
-- Restart terminal/IDE after creating `.env`
-
-**"404 Not Found" when testing MCP server**
-- Start MCP server: `python src/mcp_server/server.py`
-- Verify it's running on `http://localhost:8000`
-- Wait a few seconds after starting before testing
-
-**"Connection refused" or "Connection error"**
-- Start MCP server first in Terminal 1
-- Check if port 8000 is in use: `lsof -i :8000` (macOS/Linux)
-- Verify `CHROMA_PATH` points to correct directory (relative or absolute path both work)
-
-**Module not found errors**
-- Activate virtual environment: `source venv/bin/activate`
-- Reinstall dependencies: `pip install -r requirements.txt`
-
-**ChromaDB errors**
-- Verify `CHROMA_PATH` points to correct directory
-- Ensure `vectordb/chroma/` directory exists
-- Check file permissions
+---
 
 ## License
 
-This project is part of the Applied Generative AI course at the University of Chicago.
+This project was developed as part of the Applied Generative AI course at the University of Chicago.
 
+---
+
+## Acknowledgments
+
+- Amazon Product Data 2020 dataset from Hugging Face
+- OpenAI for GPT-4o, Whisper, TTS-1, and embedding models
+- LangGraph framework for multi-agent orchestration
+- ChromaDB for vector database infrastructure
+- SerpAPI for real-time product search
